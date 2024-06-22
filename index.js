@@ -338,32 +338,6 @@ async function run() {
             }
         });
 
-
-
-
-
-        // app.post('/surveys/:id/vote', async (req, res) => {
-        //     try {
-        //         const survey = await surveyCollection.findById(req.params.id);
-        //         if (!survey) {
-        //             return res.status(404).send('Survey not found');
-        //         }
-
-        //         const { vote } = req.body;
-        //         if (vote === 'yes') {
-        //             survey.yesCount += 1;
-        //         } else if (vote === 'no') {
-        //             survey.noCount += 1;
-        //         }
-
-        //         survey.voteCount += 1;
-        //         await survey.save();
-        //         res.status(200).send('Vote recorded');
-        //     } catch (error) {
-        //         res.status(500).send(error);
-        //     }
-        // });
-
         // Send a ping to confirm a successful connection
         // await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
