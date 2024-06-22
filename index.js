@@ -6,7 +6,11 @@ require('dotenv').config()
 const port = process.env.PORT || 5000;
 
 // middleware
-app.use(cors());
+app.use(
+    cors({
+        origin: ["http://localhost:5173", "https://survey-haven.web.app", "https://survey-haven.firebaseapp.com"],
+        credentials: true,
+    }));
 app.use(express.json());
 
 
@@ -25,7 +29,7 @@ const client = new MongoClient(uri, {
 async function run() {
     try {
         // Connect the client to the server	(optional starting in v4.7)
-        await client.connect();
+        // await client.connect();
 
         const userCollection = client.db("SurveyDb").collection("users");
         const surveyCollection = client.db("SurveyDb").collection("surveys");
@@ -78,7 +82,7 @@ async function run() {
         }
 
         // users related api
-        app.post('/users', verifyToken, verifyAdmin, async (req, res) => {
+        app.post('/users', async (req, res) => {
             const user = req.body;
 
             const query = { email: user.email }
@@ -95,6 +99,18 @@ async function run() {
             const result = await userCollection.find().toArray();
             res.send(result);
         })
+
+        app.get('/users', async (req, res) => {
+            try {
+                const { role } = req.query;
+                const query = role ? { role } : {};
+                const users = await userCollection.find(query).toArray();
+                res.json(users);
+            } catch (error) {
+                console.error('Error fetching users:', error);
+                res.status(500).send('Internal Server Error');
+            }
+        });
 
         app.get('/users/admin/:email', verifyToken, async (req, res) => {
             const email = req.params.email;
@@ -148,7 +164,7 @@ async function run() {
             res.send(result);
         })
 
-        app.delete('/users/:id', verifyToken, verifyAdmin, verifySurveyor, async (req, res) => {
+        app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
             const id = req.params.id;
             const query = { _id: new ObjectId(id) };
             const result = await userCollection.deleteOne(query);
@@ -175,13 +191,59 @@ async function run() {
             res.send(result);
         })
 
+        app.put('/surveys/:id', async (req, res) => {
+            const id = req.params.id;
+            // console.log(id);
+            const filter = { _id: new ObjectId(id) };
+            const options = { upsert: true };
+            const updatedSurvey = req.body;
+
+            const survey = {
+                $set: {
+                    name: updatedSurvey.name,
+                    email: updatedSurvey.email,
+                    title: updatedSurvey.title,
+                    description: updatedSurvey.description,
+                    options: updatedSurvey.options,
+                    category: updatedSurvey.category,
+                    deadline: updatedSurvey.deadline,
+                    yesCount: updatedSurvey.yesCount,
+                    noCount: updatedSurvey.noCount,
+                    totalVote: updatedSurvey.totalVote,
+                    status: updatedSurvey.status,
+                    date: updatedSurvey.date,
+
+                }
+            }
+
+            const result = await surveyCollection.updateOne(filter, survey, options);
+            res.send(result);
+        });
+
+        app.delete('/surveys/:id', verifyToken, verifySurveyor, async (req, res) => {
+            const id = req.params.id;
+            const query = { _id: new ObjectId(id) };
+            const result = await surveyCollection.deleteOne(query);
+            res.send(result);
+        })
+
+        app.get('/surveys', async (req, res) => {
+            try {
+                const topSurveys = await surveyCollection.find().sort({ topVote: -1 }).limit(6).toArray();
+                res.status(200).json(topSurveys);
+            } catch (error) {
+                console.error('Error fetching top surveys:', error);
+                res.status(500).json({ success: false, message: 'Internal Server Error' });
+            }
+        });
+
         // Fetch survey details
         app.get('/surveys/:id', async (req, res) => {
             try {
                 const { id } = req.params;
                 const query = { _id: new ObjectId(id) }
                 const survey = await surveyCollection.findOne(query);
-        
+
                 if (survey) {
                     // Ensure votes are initialized
                     if (!survey.votes) {
@@ -196,7 +258,7 @@ async function run() {
                 res.status(500).send('Internal Server Error');
             }
         });
-        
+
 
         // Vote for survey
         app.post('/surveys/:id/vote', async (req, res) => {
@@ -205,11 +267,11 @@ async function run() {
                 const { vote } = req.body;
                 const query = { _id: new ObjectId(id) };
                 const survey = await surveyCollection.findOne(query);
-        
+
                 if (!survey) {
                     return res.status(404).send('Survey not found');
                 }
-        
+
                 if (vote === 'yes') {
                     survey.yesCount += 1;
                 } else if (vote === 'no') {
@@ -217,23 +279,25 @@ async function run() {
                 } else {
                     return res.status(400).send('Invalid vote value');
                 }
-        
+
+                survey.totalVote += 1;
                 await surveyCollection.updateOne(query, {
                     $set: {
                         yesCount: survey.yesCount,
                         noCount: survey.noCount,
+                        totalVote: survey.totalVote
                     },
                 });
-        
+
                 res.status(200).json({ success: true, updatedSurvey: survey });
             } catch (error) {
                 console.error('Error recording vote:', error);
                 res.status(500).send('Internal Server Error');
             }
         });
-        
-        
-        
+
+
+
 
         // Report survey
         app.post('/surveys/:id/report', async (req, res) => {
@@ -246,7 +310,7 @@ async function run() {
                 res.status(500).send('Internal Server Error');
             }
         });
-        
+
 
         // Add comment (for pro-users only)
         app.post('/surveys/:id/comments', async (req, res) => {
@@ -255,25 +319,25 @@ async function run() {
                 const { comment } = req.body;
                 const query = { _id: new ObjectId(id) }
                 const survey = await surveyCollection.findOne(query);
-        
+
                 if (!survey) {
                     return res.status(404).send('Survey not found');
                 }
-        
+
                 if (!survey.comments) {
                     survey.comments = [];
                 }
-        
+
                 survey.comments.push(comment);
                 await surveyCollection.updateOne(query, { $set: { comments: survey.comments } });
-        
+
                 res.status(200).json({ success: true, comment });
             } catch (error) {
                 console.error('Error adding comment:', error);
                 res.status(500).send('Internal Server Error');
             }
         });
-        
+
 
 
 
@@ -301,7 +365,7 @@ async function run() {
         // });
 
         // Send a ping to confirm a successful connection
-        await client.db("admin").command({ ping: 1 });
+        // await client.db("admin").command({ ping: 1 });
         console.log("Pinged your deployment. You successfully connected to MongoDB!");
     } finally {
         // Ensures that the client will close when you finish/error
