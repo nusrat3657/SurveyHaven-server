@@ -33,6 +33,7 @@ async function run() {
 
         const userCollection = client.db("SurveyDb").collection("users");
         const surveyCollection = client.db("SurveyDb").collection("surveys");
+        const responseCollection = client.db("SurveyDb").collection("responses");
 
         // jwt related api
         app.post('/jwt', async (req, res) => {
@@ -152,7 +153,7 @@ async function run() {
             res.send({ surveyor });
         })
 
-        app.patch('/users/surveyor/:id', verifyToken, async (req, res) => {
+        app.patch('/users/surveyor/:id', verifyToken, verifySurveyor, async (req, res) => {
             const id = req.params.id;
             const filter = { _id: new ObjectId(id) };
             const updatedDoc = {
@@ -171,8 +172,34 @@ async function run() {
             res.send(result);
         })
 
+        app.post('/payment', async (req, res) => {
+            const { email } = req.body;
+
+            // Simulate a payment process here (e.g., integrate with a payment gateway)
+            const paymentSuccess = true; // Simulate payment success
+
+            if (paymentSuccess) {
+                const query = { email: email };
+                const updateDoc = {
+                    $set: {
+                        role: 'pro-user'
+                    },
+                };
+
+                const result = await userCollection.updateOne(query, updateDoc);
+
+                if (result.modifiedCount > 0) {
+                    res.status(200).json({ success: true });
+                } else {
+                    res.status(400).json({ success: false, message: 'User not found or role update failed' });
+                }
+            } else {
+                res.status(400).json({ success: false, message: 'Payment failed' });
+            }
+        });
+
         // surveys related api
-        app.post('/surveys', verifyToken, async (req, res) => {
+        app.post('/surveys', verifyToken, verifySurveyor, async (req, res) => {
             const newSurvey = req.body;
             // console.log(newSurvey);
             const result = await surveyCollection.insertOne(newSurvey);
@@ -191,7 +218,7 @@ async function run() {
             res.send(result);
         })
 
-        app.put('/surveys/:id', async (req, res) => {
+        app.put('/surveys/surveyor/:id', verifyToken, verifySurveyor, async (req, res) => {
             const id = req.params.id;
             // console.log(id);
             const filter = { _id: new ObjectId(id) };
@@ -289,7 +316,26 @@ async function run() {
                     },
                 });
 
-                res.status(200).json({ success: true, updatedSurvey: survey });
+                // Insert the vote into the responses collection
+                // const response = {
+                //     surveyId: id,
+                //     vote,
+                //     user: {
+                //         name: user.name,
+                //         email: user.email,
+                //     },
+                //     timestamp: new Date(),
+                // };
+                // const result = await responseCollection.insertOne(response);
+
+                // if (surveyUpdate.matchedCount && result.insertedCount) {
+                //     const updatedSurvey = await surveyCollection.findOne({ _id: new ObjectId(id) });
+                //     res.status(200).json({ success: true, updatedSurvey });
+                // } else {
+                //     res.status(500).json({ success: false, message: 'Failed to record vote' });
+                // }
+
+                // res.status(200).json({ success: true, updatedSurvey: survey });
             } catch (error) {
                 console.error('Error recording vote:', error);
                 res.status(500).send('Internal Server Error');
@@ -337,6 +383,50 @@ async function run() {
                 res.status(500).send('Internal Server Error');
             }
         });
+
+        // response related api
+        app.post('/responses', async (req, res) => {
+            const response = req.body;
+            // console.log(newSurvey);
+            const result = await responseCollection.insertOne(response);
+            res.send(result);
+        })
+
+        app.get('/responses', async (req, res) => {
+            const result = await responseCollection.find().toArray();
+            res.send(result);
+        })
+
+        // app.get('/responses/:id', async (req, res) => {
+        //     const id = req.params.id;
+        //     const query = { _id: new ObjectId(id) }
+        //     const result = await responseCollection.findOne(query);
+        //     res.send(result);
+        // })
+
+        app.get('/responses/:id', async (req, res) => {
+            try {
+                const { id } = req.params;
+                const query = { _id: new ObjectId(id) }
+                const response = await responseCollection.findOne(query);
+                res.send(response)
+
+                // if (survey) {
+                //     // Ensure votes are initialized
+                //     if (!survey.votes) {
+                //         survey.votes = { yes: 0, no: 0 };
+                //     }
+                //     res.json(survey);
+                // } else {
+                //     res.status(404).send('Survey not found');
+                // }
+            } catch (error) {
+                console.error('Error fetching survey:', error);
+                res.status(500).send('Internal Server Error');
+            }
+        });
+
+
 
         // Send a ping to confirm a successful connection
         // await client.db("admin").command({ ping: 1 });
